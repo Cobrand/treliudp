@@ -32,7 +32,10 @@ pub struct Treliudp<R: DeserializeOwned + Send, S: Serialize + Send> {
 }
 
 impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliudp<R, S> {
-    pub fn new<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
+    /// Creates a threaded Socket and connects to the remote instantly.
+    /// 
+    /// This will fail ONLY if there is something wrong with the network, preventing it to create a UDP Socket.
+    pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
         let rudp = RUdpSocket::connect(remote_addr)?;
 
         let (l2t_sender, l2t_receiver) = channel::<L2TMessage<S>>();
@@ -40,7 +43,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
 
         let mut threaded_socket = ThreadedSocket::new(rudp, l2t_receiver, t2l_sender);
 
-        thread::spawn(move || threaded_socket.main_loop());
+        thread::spawn(move || threaded_socket.init());
 
         Ok(Treliudp {
             status: CommStatus::Connecting,
@@ -82,7 +85,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
         // ignore the result: if the channel has hung up, then it doesn't matter anyway
     }
 
-    pub fn disconnected(&mut self) {
+    pub fn disconnect(&mut self) {
         let _i = self.sender.send(L2TMessage::Stop);
     }
 
@@ -91,7 +94,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     }
 }
 
-pub struct ThreadedSocket<R: DeserializeOwned + Send, S: Serialize + Send> {
+pub (crate) struct ThreadedSocket<R: DeserializeOwned + Send, S: Serialize + Send> {
     pub (crate) socket: RUdpSocket,
     pub (crate) serde_config: BincodeConfig,
 
@@ -114,9 +117,15 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
         }
     }
 
+    pub (crate) fn init(&mut self) {
+        self.socket.set_timeout_delay(500 * 10); // equivalent to 10s 
+        self.main_loop();
+    }
+
     pub (crate) fn main_loop(&mut self) {
         while !self.should_stop {
             if let Err(e) = self.socket.next_tick() {
+                log::warn!("error {} was experienced while ticking", e);
                 self.add_error(e);
             }
             
@@ -124,12 +133,19 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
             self.process_outgoing();
             thread::sleep(Duration::from_millis(2));
         }
+        log::info!("treliudp thread shutting down");
     }
 
     fn process_incoming(&mut self) {
         while let Some(event) = self.socket.next_event() {
             match event {
-                SocketEvent::Timeout | SocketEvent::Aborted | SocketEvent::Ended => {
+                SocketEvent::Timeout => {
+                    log::warn!("socket matching {:?} timeout-ed", self.socket.remote_addr());
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated));
+                    self.should_stop = true;
+                },
+                SocketEvent::Aborted | SocketEvent::Ended => {
+                    log::warn!("received termination from remote {:?}", self.socket.remote_addr());
                     let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated));
                     self.should_stop = true;
                 },
@@ -176,6 +192,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
                     }
                 },
                 Err(TryRecvError::Disconnected) => {
+                    log::warn!("threaded socket has no matching local thread (probably dropped), remote {:?} is shutting down", self.socket.remote_addr());
                     self.should_stop = true;
                     break 'outgoing;
                 },
@@ -187,7 +204,8 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
     }
 
     fn add_error(&mut self, error: IoError) {
-        if self.sender.send(T2LMessage::Error(error)).is_err() {
+        if let Err(e) = self.sender.send(T2LMessage::Error(error)) {
+            log::warn!("threaded socket has no matching local thread (probably dropped) to send error {}, remote {:?} is shutting down", e, self.socket.remote_addr());
             self.should_stop = true;
         }
     }
