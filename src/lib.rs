@@ -4,7 +4,7 @@ pub use reliudp;
 pub use serde;
 pub use bincode;
 
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, SocketAddr};
 use std::thread;
 use std::time::Duration;
 
@@ -15,7 +15,7 @@ use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
 use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CommStatus {
     Connecting,
     Connected,
@@ -26,9 +26,19 @@ use std::io::{Error as IoError, Result as IoResult};
 
 pub struct Treliudp<R: DeserializeOwned + Send, S: Serialize + Send> {
     pub (crate) status: CommStatus,
+    pub (crate) remote_addr: SocketAddr,
     pub (crate) errors: Vec<IoError>,
     pub (crate) receiver: Receiver<T2LMessage<R>>,
     pub (crate) sender: Sender<L2TMessage<S>>,
+}
+
+impl<R: DeserializeOwned + Send, S: Serialize + Send> ::std::fmt::Debug for Treliudp<R, S> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        f.debug_struct("Treliudp")
+            .field("status", &self.status)
+            .field("remote_addr", &self.remote_addr)
+            .finish()
+    }
 }
 
 impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliudp<R, S> {
@@ -37,6 +47,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     /// This will fail ONLY if there is something wrong with the network, preventing it to create a UDP Socket.
     pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
         let rudp = RUdpSocket::connect(remote_addr)?;
+        let remote_addr = rudp.remote_addr();
 
         let (l2t_sender, l2t_receiver) = channel::<L2TMessage<S>>();
         let (t2l_sender, t2l_receiver) = channel::<T2LMessage<R>>();
@@ -47,6 +58,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
 
         Ok(Treliudp {
             status: CommStatus::Connecting,
+            remote_addr,
             errors: vec!(),
             receiver: t2l_receiver,
             sender: l2t_sender,
@@ -91,6 +103,14 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
 
     pub fn drain_errors(&mut self) -> impl Iterator<Item=IoError> + '_ {
         self.errors.drain(..)
+    }
+
+    pub fn status(&self) -> CommStatus {
+        self.status
+    }
+
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 }
 
