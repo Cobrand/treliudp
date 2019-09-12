@@ -22,6 +22,20 @@ pub enum CommStatus {
     Terminated,
 }
 
+impl CommStatus {
+    pub fn is_connected(&self) -> bool {
+        *self == CommStatus::Connected
+    }
+    
+    pub fn is_connecting(&self) -> bool {
+        *self == CommStatus::Connecting
+    }
+
+    pub fn is_terminated(&self) -> bool {
+        *self == CommStatus::Terminated
+    }
+}
+
 use std::io::{Error as IoError, Result as IoResult};
 
 pub struct Treliudp<R: DeserializeOwned + Send, S: Serialize + Send> {
