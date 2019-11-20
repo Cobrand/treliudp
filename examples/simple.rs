@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
             Ok(message) => {
                 println!("client: Received (n=final) \"{}\"", message);
             },
-            Err(treliudp::TerminateType::Ended) => {
+            Err(treliudp::TerminateKind::Ended) => {
                 println!("client: remote server has disconnected expectedly");
                 return Ok(());
             },

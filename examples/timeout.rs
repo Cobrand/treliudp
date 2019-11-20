@@ -1,5 +1,5 @@
 
-use treliudp::{Treliudp, CommStatus, TerminateType};
+use treliudp::{Treliudp, CommStatus, TerminateKind};
 
 fn main() -> Result<(), Box<dyn ::std::error::Error>> {
     env_logger::init();
@@ -21,8 +21,8 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
     }
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    assert_eq!(treliudp.next_incoming(), Some(Err(TerminateType::Timeout)));
-    assert_eq!(treliudp.status(), CommStatus::Terminated(TerminateType::Timeout));
+    assert_eq!(treliudp.next_incoming(), Some(Err(TerminateKind::Timeout)));
+    assert_eq!(treliudp.status(), CommStatus::Terminated(TerminateKind::Timeout));
 
     Ok(())
 }

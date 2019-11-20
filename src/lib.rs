@@ -16,7 +16,7 @@ use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TerminateType {
+pub enum TerminateKind {
     /// Timeout: We didn't receive any message from the remote for too long. 
     Timeout,
     /// The remote ended the connection unexpectedly.
@@ -25,9 +25,9 @@ pub enum TerminateType {
     Ended,
 }
 
-impl TerminateType {
+impl TerminateKind {
     pub fn is_timeout(&self) -> bool {
-        *self == TerminateType::Timeout
+        *self == TerminateKind::Timeout
     }
 }
 
@@ -35,7 +35,7 @@ impl TerminateType {
 pub enum CommStatus {
     Connecting,
     Connected,
-    Terminated(TerminateType),
+    Terminated(TerminateKind),
 }
 
 impl CommStatus {
@@ -107,7 +107,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     ///
     /// You must call this even if you don't use the data, otherwise `status` will never be
     /// updated.
-    pub fn next_incoming(&mut self) -> Option<Result<Box<R>, TerminateType>> {
+    pub fn next_incoming(&mut self) -> Option<Result<Box<R>, TerminateKind>> {
         'receiver: loop {
             match self.receiver.try_recv() {
                 Ok(T2LMessage::Error(io_err)) => {
@@ -127,7 +127,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
                         break 'receiver Some(Err(t))
                     } else {
                         log::error!("remote to local thread connection broken for {}, but status isn't Terminated!", self.remote_addr());
-                        break 'receiver Some(Err(TerminateType::Aborted))
+                        break 'receiver Some(Err(TerminateKind::Aborted))
                     }
                 }
             }
@@ -202,18 +202,18 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
         while let Some(event) = self.socket.next_event() {
             match event {
                 SocketEvent::Timeout => {
-                    log::warn!("socket matching {:?} timeout-ed", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Timeout)));
+                    log::warn!("socket matching {:?} timed out", self.socket.remote_addr());
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateKind::Timeout)));
                     self.should_stop = true;
                 },
                 SocketEvent::Ended => {
                     log::warn!("received termination \"ended\" from remote {:?}", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Ended)));
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateKind::Ended)));
                     self.should_stop = true;
                 },
                 SocketEvent::Aborted => {
                     log::warn!("received termination \"aborted\" from remote {:?}", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Aborted)));
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateKind::Aborted)));
                     self.should_stop = true;
                 },
                 SocketEvent::Connected => {
