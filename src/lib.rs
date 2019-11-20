@@ -20,6 +20,7 @@ pub enum CommStatus {
     Connecting,
     Connected,
     Terminated,
+    Timeout,
 }
 
 impl CommStatus {
@@ -31,8 +32,8 @@ impl CommStatus {
         *self == CommStatus::Connecting
     }
 
-    pub fn is_terminated(&self) -> bool {
-        *self == CommStatus::Terminated
+    pub fn is_stopped(&self) -> bool {
+        *self == CommStatus::Terminated || *self == CommStatus::Timeout
     }
 }
 
@@ -175,7 +176,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
             match event {
                 SocketEvent::Timeout => {
                     log::warn!("socket matching {:?} timeout-ed", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated));
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Timeout));
                     self.should_stop = true;
                 },
                 SocketEvent::Aborted | SocketEvent::Ended => {
