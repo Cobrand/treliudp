@@ -6,7 +6,7 @@ use treliudp::bincode;
 use std::sync::Arc;
 
 fn generate_message(i: i32) -> String {
-    let x = 1 * (256i32 - i);
+    let x = i * (256i32 - i);
     format!("my message is : {0} x (256 - {0}) = {1}", i, x)
 }
 
@@ -83,9 +83,12 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
             Ok(message) => {
                 println!("client: Received (n=final) \"{}\"", message);
             },
-            Err(_) => {
+            Err(treliudp::TerminateType::Ended) => {
                 println!("client: remote server has disconnected expectedly");
                 return Ok(());
+            },
+            Err(e) => {
+                panic!("unexpected error {:?} received, expected a peacefull shutdown", e);
             }
         }
     }

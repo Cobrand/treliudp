@@ -16,11 +16,26 @@ use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TerminateType {
+    /// Timeout: We didn't receive any message from the remote for too long. 
+    Timeout,
+    /// The remote ended the connection unexpectedly.
+    Aborted,
+    /// The remote ended the connection expectedly.
+    Ended,
+}
+
+impl TerminateType {
+    pub fn is_timeout(&self) -> bool {
+        *self == TerminateType::Timeout
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CommStatus {
     Connecting,
     Connected,
-    Terminated,
-    Timeout,
+    Terminated(TerminateType),
 }
 
 impl CommStatus {
@@ -32,8 +47,12 @@ impl CommStatus {
         *self == CommStatus::Connecting
     }
 
-    pub fn is_stopped(&self) -> bool {
-        *self == CommStatus::Terminated || *self == CommStatus::Timeout
+    pub fn is_terminated(&self) -> bool {
+        if let CommStatus::Terminated(_) = *self {
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -84,8 +103,11 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     ///
     /// * `None` means that no more messages are expected. You should wait before polling again.
     /// * `Some(Ok(message))` means `message` has been received.
-    /// * `Some(Err(()))` means that the remote client has disconnected
-    pub fn next_incoming(&mut self) -> Option<Result<Box<R>, ()>> {
+    /// * `Some(Err(e))` means that the remote client has disconnected. `e` contains info about how.
+    ///
+    /// You must call this even if you don't use the data, otherwise `status` will never be
+    /// updated.
+    pub fn next_incoming(&mut self) -> Option<Result<Box<R>, TerminateType>> {
         'receiver: loop {
             match self.receiver.try_recv() {
                 Ok(T2LMessage::Error(io_err)) => {
@@ -101,7 +123,12 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
                     break 'receiver None
                 },
                 Err(TryRecvError::Disconnected) => {
-                    break 'receiver Some(Err(()))
+                    if let CommStatus::Terminated(t) = self.status() {
+                        break 'receiver Some(Err(t))
+                    } else {
+                        log::error!("remote to local thread connection broken for {}, but status isn't Terminated!", self.remote_addr());
+                        break 'receiver Some(Err(TerminateType::Aborted))
+                    }
                 }
             }
         }
@@ -176,12 +203,17 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
             match event {
                 SocketEvent::Timeout => {
                     log::warn!("socket matching {:?} timeout-ed", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Timeout));
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Timeout)));
                     self.should_stop = true;
                 },
-                SocketEvent::Aborted | SocketEvent::Ended => {
-                    log::warn!("received termination from remote {:?}", self.socket.remote_addr());
-                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated));
+                SocketEvent::Ended => {
+                    log::warn!("received termination \"ended\" from remote {:?}", self.socket.remote_addr());
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Ended)));
+                    self.should_stop = true;
+                },
+                SocketEvent::Aborted => {
+                    log::warn!("received termination \"aborted\" from remote {:?}", self.socket.remote_addr());
+                    let _x = self.sender.send(T2LMessage::StatusChange(CommStatus::Terminated(TerminateType::Aborted)));
                     self.should_stop = true;
                 },
                 SocketEvent::Connected => {
