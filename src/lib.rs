@@ -31,6 +31,12 @@ impl TerminateKind {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum TreliudpMessage<R> {
+    StatusChange(CommStatus),
+    Msg(Box<R>),
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CommStatus {
     Connecting,
@@ -107,7 +113,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     ///
     /// You must call this even if you don't use the data, otherwise `status` will never be
     /// updated.
-    pub fn next_incoming(&mut self) -> Option<Result<Box<R>, TerminateKind>> {
+    pub fn next_incoming(&mut self) -> Option<TreliudpMessage<R>> {
         'receiver: loop {
             match self.receiver.try_recv() {
                 Ok(T2LMessage::Error(io_err)) => {
@@ -115,19 +121,20 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
                 },
                 Ok(T2LMessage::StatusChange(new_status)) => {
                     self.status = new_status;
+                    break 'receiver Some(TreliudpMessage::StatusChange(new_status))
                 }
                 Ok(T2LMessage::Message(boxed_message)) => {
-                    break 'receiver Some(Ok(boxed_message))
+                    break 'receiver Some(TreliudpMessage::Msg(boxed_message))
                 },
                 Err(TryRecvError::Empty) => {
                     break 'receiver None
                 },
                 Err(TryRecvError::Disconnected) => {
                     if let CommStatus::Terminated(t) = self.status() {
-                        break 'receiver Some(Err(t))
+                        break 'receiver Some(TreliudpMessage::StatusChange(CommStatus::Terminated(t)))
                     } else {
                         log::error!("remote to local thread connection broken for {}, but status isn't Terminated!", self.remote_addr());
-                        break 'receiver Some(Err(TerminateKind::Aborted))
+                        break 'receiver Some(TreliudpMessage::StatusChange(CommStatus::Terminated(TerminateKind::Aborted)))
                     }
                 }
             }

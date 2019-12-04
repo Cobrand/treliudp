@@ -1,4 +1,4 @@
-use treliudp::Treliudp;
+use treliudp::{Treliudp, TerminateKind, TreliudpMessage, CommStatus};
 use treliudp::reliudp::{self, SocketEvent};
 
 use treliudp::bincode;
@@ -55,13 +55,14 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         // for the client part, next_tick is done automatically, so we don't really have to care about that
         while let Some(m) = treliudp.next_incoming() {
             match m {
-                Ok(message) => {
+                TreliudpMessage::Msg(message) => {
                     println!("client (n={:?}): Received message \"{}\"", n, message);
                 },
-                Err(_) => {
+                TreliudpMessage::StatusChange(CommStatus::Terminated(_)) => {
                     println!("client (n={:?}): remote server has disconnected unexpectedly", n);
                     break;
-                }
+                },
+                _ => {}
             }
         }
         if n % 180 == 0 {
@@ -80,16 +81,17 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
 
     while let Some(message) = treliudp.next_incoming() {
         match message {
-            Ok(message) => {
+            TreliudpMessage::Msg(message) => {
                 println!("client: Received (n=final) \"{}\"", message);
             },
-            Err(treliudp::TerminateKind::Ended) => {
+            TreliudpMessage::StatusChange(CommStatus::Terminated(TerminateKind::Ended)) => {
                 println!("client: remote server has disconnected expectedly");
                 return Ok(());
             },
-            Err(e) => {
+            TreliudpMessage::StatusChange(CommStatus::Terminated(e)) => {
                 panic!("unexpected error {:?} received, expected a peacefull shutdown", e);
-            }
+            },
+            _ => {},
         }
     }
 

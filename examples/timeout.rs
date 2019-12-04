@@ -1,5 +1,5 @@
 
-use treliudp::{Treliudp, CommStatus, TerminateKind};
+use treliudp::{Treliudp, CommStatus, TreliudpMessage, TerminateKind};
 
 fn main() -> Result<(), Box<dyn ::std::error::Error>> {
     env_logger::init();
@@ -13,15 +13,15 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         'm: loop {
             match treliudp.next_incoming() {
                 None => break 'm,
-                Some(Ok(_)) => panic!("there shouldn't be a server connected to {}", treliudp.remote_addr()),
-                Some(Err(_)) => panic!("there shouldn't be a server connected to {}", treliudp.remote_addr()),
+                Some(TreliudpMessage::Msg(_)) => panic!("there shouldn't be a server connected to {}", treliudp.remote_addr()),
+                Some(TreliudpMessage::StatusChange(_)) => panic!("there shouldn't be a server connected to {}", treliudp.remote_addr()),
             }
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    assert_eq!(treliudp.next_incoming(), Some(Err(TerminateKind::Timeout)));
+    assert_eq!(treliudp.next_incoming(), Some(TreliudpMessage::StatusChange(CommStatus::Terminated(TerminateKind::Timeout))));
     assert_eq!(treliudp.status(), CommStatus::Terminated(TerminateKind::Timeout));
 
     Ok(())
