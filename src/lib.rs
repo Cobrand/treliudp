@@ -188,6 +188,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
 
     pub (crate) fn init(&mut self) {
         self.socket.set_timeout_delay(500 * 10); // equivalent to 10s 
+        self.socket.set_heartbeat_delay(250); // equivalent to 500ms 
         self.main_loop();
     }
 
