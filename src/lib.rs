@@ -87,6 +87,13 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     /// This will fail ONLY if there is something wrong with the network, preventing it to create a UDP Socket.
     pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
         let rudp = RUdpSocket::connect(remote_addr)?;
+        Ok(Self::from_rudp(rudp))
+    }
+
+    /// Creates a threaded Socket given "connecting" rudp instance.
+    ///
+    /// Useful if you want to "customize" your instance before hand, for instance for the delay timeouts...
+    pub fn from_rudp(rudp: RUdpSocket) -> Treliudp<R, S> {
         let remote_addr = rudp.remote_addr();
 
         let (l2t_sender, l2t_receiver) = channel::<L2TMessage<S>>();
@@ -96,13 +103,13 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
 
         thread::spawn(move || threaded_socket.init());
 
-        Ok(Treliudp {
+        Treliudp {
             status: CommStatus::Connecting,
             remote_addr,
             errors: vec!(),
             receiver: t2l_receiver,
             sender: l2t_sender,
-        })
+        }
     }
 
     /// Receive incoming messages.
