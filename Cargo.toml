@@ -7,13 +7,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reliudp = { path = "../reliudp" }
+reliudp = { git = "https://github.com/Cobrand/reliudp.git" }
 bincode = "^1"
 serde = { version = "^1", features = ["derive"] }
 
 log = "0.4"
 
-update_regulator = { path = "../update_regulator" }
+update_regulator = { git = "https://github.com/Cobrand/update_regulator.git" }
 
 [dev-dependencies]
 env_logger = "0.6"
