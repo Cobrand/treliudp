@@ -1,6 +1,6 @@
 [package]
 name = "treliudp"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Cobrand <cobrandw@gmail.com>"]
 edition = "2018"
 

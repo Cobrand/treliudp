@@ -86,7 +86,9 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     /// 
     /// This will fail ONLY if there is something wrong with the network, preventing it to create a UDP Socket.
     pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
-        let rudp = RUdpSocket::connect(remote_addr)?;
+        let mut rudp = RUdpSocket::connect(remote_addr)?;
+        rudp.set_timeout_delay(500 * 10); // equivalent to 10s 
+        rudp.set_heartbeat_delay(250); // equivalent to 500ms 
         Ok(Self::from_rudp(rudp))
     }
 
@@ -194,8 +196,6 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
     }
 
     pub (crate) fn init(&mut self) {
-        self.socket.set_timeout_delay(500 * 10); // equivalent to 10s 
-        self.socket.set_heartbeat_delay(250); // equivalent to 500ms 
         self.main_loop();
     }
 
