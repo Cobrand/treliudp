@@ -1,7 +1,7 @@
 use treliudp::{Treliudp, TerminateKind, TreliudpMessage, CommStatus};
 use treliudp::reliudp::{self, SocketEvent};
 
-use treliudp::bincode;
+use treliudp::bincode::{Options};
 
 use std::sync::Arc;
 
@@ -10,18 +10,16 @@ fn generate_message(i: i32) -> String {
     format!("my message is : {0} x (256 - {0}) = {1}", i, x)
 }
 
-fn deser_message(bincode_config: &bincode::Config, data: impl AsRef<[u8]>) -> String {
-    bincode_config.deserialize::<String>(data.as_ref()).unwrap()
+fn deser_message(data: impl AsRef<[u8]>) -> String {
+    treliudp::treliudp_bincode_options().deserialize::<String>(data.as_ref()).unwrap()
 }
 
-fn ser_message(bincode_config: &bincode::Config, message: &str) -> Arc<[u8]> {
-    Arc::from(bincode_config.serialize(&message).unwrap())
+fn ser_message(message: &str) -> Arc<[u8]> {
+    Arc::from(treliudp::treliudp_bincode_options().serialize(&message).unwrap())
 }
 
 fn main() -> Result<(), Box<dyn ::std::error::Error>> {
     env_logger::init();
-
-    let server_bincode_config = bincode::config();
 
     let mut server = reliudp::RUdpServer::new("0.0.0.0:61244").expect("Failed to create reliudp server");
 
@@ -37,7 +35,7 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         for (_socket, ref server_event) in server.drain_events() {
             match server_event {
                 SocketEvent::Data(d) => {
-                    println!("local server: Incoming message \"{}\"", deser_message(&server_bincode_config, &d));
+                    println!("local server: Incoming message \"{}\"", deser_message(&d));
                 },
                 _ => {
                     println!("local server: Incoming event {:?}", server_event);
@@ -48,7 +46,7 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         if n % 120 == 0 {
             let message_to_send = generate_message(n);
             println!("local server (n={:?}): Sending message \"{}\" to all {:?} remotes", n, message_to_send, server.remotes_len());
-            server.send_data(&ser_message(&server_bincode_config, &message_to_send), reliudp::MessageType::KeyMessage);
+            server.send_data(&ser_message(&message_to_send), reliudp::MessageType::KeyMessage);
         }
 
         // CLIENT PART

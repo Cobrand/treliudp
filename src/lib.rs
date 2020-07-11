@@ -9,11 +9,17 @@ use std::thread;
 use std::time::Duration;
 
 use reliudp::{RUdpSocket, SocketEvent, MessageType};
-use bincode::{config as bincode_config, Config as BincodeConfig};
+use bincode::{options as bincode_options, config::{Options as BincodeOptions}};
 
 use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
 use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
+
+pub fn treliudp_bincode_options() -> impl BincodeOptions {
+    bincode_options()
+        .with_limit(256 * 1220) // reliudp can't hold messages that big
+        .reject_trailing_bytes()
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TerminateKind {
@@ -174,7 +180,6 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
 
 pub (crate) struct ThreadedSocket<R: DeserializeOwned + Send, S: Serialize + Send> {
     pub (crate) socket: RUdpSocket,
-    pub (crate) serde_config: BincodeConfig,
 
     pub (crate) receiver: Receiver<L2TMessage<S>>,
     pub (crate) sender: Sender<T2LMessage<R>>,
@@ -184,11 +189,8 @@ pub (crate) struct ThreadedSocket<R: DeserializeOwned + Send, S: Serialize + Sen
 
 impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
     pub (crate) fn new(socket: RUdpSocket, receiver: Receiver<L2TMessage<S>>, sender: Sender<T2LMessage<R>>) -> ThreadedSocket<R, S> {
-        let mut serde_config = bincode_config();
-        serde_config.limit(256 * 1220); // 305KB, reliudp can't hold messages that big 
         ThreadedSocket {
             socket,
-            serde_config,
             receiver,
             sender,
             should_stop: false,
@@ -251,7 +253,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
 
     #[inline]
     fn deserialize_message(&self, data: &[u8]) -> Result<Box<R>, bincode::Error> {
-        self.serde_config.deserialize::<Box<R>>(&data)
+        treliudp_bincode_options().deserialize::<Box<R>>(&data)
     }
 
     fn process_outgoing(&mut self) {
@@ -261,7 +263,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
                     self.should_stop = true;
                 },
                 Ok(L2TMessage::Message(m, t)) => {
-                    let r = self.serde_config.serialize::<Box<S>>(&m);
+                    let r = treliudp_bincode_options().serialize::<Box<S>>(&m);
                     match r {
                         Ok(d) => {
                             let d: Arc<_> = Arc::from(d.into_boxed_slice());
