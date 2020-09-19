@@ -8,7 +8,7 @@ use std::net::{ToSocketAddrs, SocketAddr};
 use std::thread;
 use std::time::Duration;
 
-use reliudp::{RUdpSocket, SocketEvent, MessageType};
+use reliudp::{RUdpSocket, SocketEvent, MessageType, MessagePriority};
 use bincode::{options as bincode_options, config::{Options as BincodeOptions}};
 
 use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
@@ -92,9 +92,7 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
     /// 
     /// This will fail ONLY if there is something wrong with the network, preventing it to create a UDP Socket.
     pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<Treliudp<R, S>> {
-        let mut rudp = RUdpSocket::connect(remote_addr)?;
-        rudp.set_timeout_delay(500 * 10); // equivalent to 10s 
-        rudp.set_heartbeat_delay(250); // equivalent to 500ms 
+        let rudp = RUdpSocket::connect(remote_addr)?;
         Ok(Self::from_rudp(rudp))
     }
 
@@ -156,8 +154,8 @@ impl<R: DeserializeOwned + Send + 'static, S: Serialize + Send + 'static> Treliu
         }
     }
 
-    pub fn send_data(&mut self, message: Box<S>, kind: MessageType) {
-        let _i = self.sender.send(L2TMessage::Message(message, kind));
+    pub fn send_data(&mut self, message: Box<S>, kind: MessageType, priority: MessagePriority) {
+        let _i = self.sender.send(L2TMessage::Message(message, kind, priority));
         // ignore the result: if the channel has hung up, then it doesn't matter anyway
     }
 
@@ -262,12 +260,12 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
                 Ok(L2TMessage::Stop) => {
                     self.should_stop = true;
                 },
-                Ok(L2TMessage::Message(m, t)) => {
+                Ok(L2TMessage::Message(m, t, priority)) => {
                     let r = treliudp_bincode_options().serialize::<Box<S>>(&m);
                     match r {
                         Ok(d) => {
                             let d: Arc<_> = Arc::from(d.into_boxed_slice());
-                            self.socket.send_data(d, t);
+                            self.socket.send_data(d, t, priority);
                         },
                         Err(e) => {
                             let remote_addr = self.socket.remote_addr();
@@ -299,7 +297,7 @@ impl<R: DeserializeOwned + Send, S: Serialize + Send> ThreadedSocket<R, S> {
 #[derive(Debug)]
 pub (crate) enum L2TMessage<S: Serialize + Send> {
     Stop,
-    Message(Box<S>, MessageType),
+    Message(Box<S>, MessageType, MessagePriority),
 }
 
 /// Threaded to local message

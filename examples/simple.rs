@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         if n % 120 == 0 {
             let message_to_send = generate_message(n);
             println!("local server (n={:?}): Sending message \"{}\" to all {:?} remotes", n, message_to_send, server.remotes_len());
-            server.send_data(&ser_message(&message_to_send), reliudp::MessageType::KeyMessage);
+            server.send_data(&ser_message(&message_to_send), reliudp::MessageType::KeyMessage, reliudp::MessagePriority::Normal);
         }
 
         // CLIENT PART
@@ -66,16 +66,13 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         if n % 180 == 0 {
             let message_to_send = generate_message(n);
             println!("client (n={:?}): Sending message \"{}\" to server", n, message_to_send);
-            treliudp.send_data(Box::new(message_to_send), reliudp::MessageType::KeyMessage);
+            treliudp.send_data(Box::new(message_to_send), reliudp::MessageType::KeyMessage, reliudp::MessagePriority::Normal);
         }
 
         ::std::thread::sleep(::std::time::Duration::from_millis(16));
     }
 
-    drop(server);
-
     ::std::thread::sleep(::std::time::Duration::from_millis(1000));
-
 
     while let Some(message) = treliudp.next_incoming() {
         match message {
@@ -92,6 +89,8 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
             _ => {},
         }
     }
+
+    drop(server);
 
     Ok(())
 }
